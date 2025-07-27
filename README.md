@@ -10,9 +10,9 @@ This code is used to solve the Helmholtz wave equation within the transfer matri
 
 ## How to use
 
-The Jupyter notebook can be run in the browser with [Binder](https://mybinder.org/v2/gh/KulaginVladimir/FESTIM-SurfaceKinetics-Validation/HEAD):
+The Jupyter notebook can be run in the browser with [Binder](https://mybinder.org/v2/gh/KulaginVladimir/HelmholtzEquation/HEAD):
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/KulaginVladimir/FESTIM-SurfaceKinetics-Validation/HEAD)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/KulaginVladimir/HelmholtzEquation/HEAD)
 
 For a local use, clone the repository to your local machine.
 
