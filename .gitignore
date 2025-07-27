@@ -3,9 +3,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.venv/
-venv/
-env/
+Helmholtz-env
 
 # IDE
 .vscode/
