@@ -1,7 +1,15 @@
 import numpy as np
 
+
 class HelmholtzSolver:
-    def __init__(self, lambda0: float, boundaries: list, epsilons: list, theta: float=0, polarization: str="s"):
+    def __init__(
+        self,
+        lambda0: float,
+        boundaries: list,
+        epsilons: list,
+        theta: float = 0,
+        polarization: str = "s",
+    ):
         """
         Args:
             lambda0 (float): wavelength in vacuum
@@ -23,8 +31,13 @@ class HelmholtzSolver:
         self.polarization = polarization.lower()
 
         if len(self.thicknesses) != len(epsilons):
-            raise ValueError("Number of layers must equal to the number of provided permittivities")
-    
+            raise ValueError(
+                "Number of layers must equal to the number of provided permittivities"
+            )
+
+        if any(self.thicknesses) < 0:
+            raise ValueError("Layer positions should be ascending")
+
     def interface_matrix(self, gamma_left: complex, gamma_right: complex):
         """Computes the interface matrix
 
@@ -38,7 +51,7 @@ class HelmholtzSolver:
 
         r = (gamma_left - gamma_right) / (gamma_left + gamma_right)
         t = 2 * gamma_left / (gamma_left + gamma_right)
-        I = np.array([[1, r], [r, 1]], dtype=complex) / t        
+        I = np.array([[1, r], [r, 1]], dtype=np.complex128) / t
 
         return I
 
@@ -53,16 +66,19 @@ class HelmholtzSolver:
             array: 2x2 propagation matrix
         """
 
-        P = np.array(
-            [
-                [np.exp(-1j * kz * d), 0], 
-                [0, np.exp(1j * kz * d)]
-            ], 
-                dtype=complex
+        z1 = -1j * kz * d
+        z2 = 1j * kz * d
+        phi1 = np.exp(z1.real, dtype=np.float128) * (
+            np.cos(z1.imag) + 1j * np.sin(z1.imag)
+        )
+        phi2 = np.exp(z2.real, dtype=np.float128) * (
+            np.cos(z2.imag) + 1j * np.sin(z2.imag)
         )
 
+        P = np.array([[phi1, 0], [0, phi2]], dtype=np.complex128)
+
         return P
-    
+
     def compute_kz(self, epsilon: complex):
         """Computes z-component of the wave vector
 
@@ -73,39 +89,82 @@ class HelmholtzSolver:
             complex: z-component of the wave vector, m^-1
         """
 
-        kx = self.k0 * np.sin(self.theta)
-        kz = np.sqrt(self.k0**2 * epsilon - kx**2 + 0j)
+        kx = self.k0 * np.sin(self.theta, dtype=np.complex128)
+        kz = np.sqrt(self.k0**2 * epsilon - kx**2 + 0j, dtype=np.complex128)
 
         if np.imag(kz) < 0:
             kz = -kz
         return kz
-    
+
+    def T(self, kz0: complex, total_thickness: float, m11: complex):
+        """Computes amplitude transmission coefficient
+
+        Args:
+            kz0 (complex): wave vector in vacuum, m^-1
+            total_thickness (float): total slab thickness, m
+            m11 (complex): transfer matrix element
+
+        Returns:
+            complex: amplitude transmission coefficient
+        """
+
+        return np.exp(-1j * kz0 * total_thickness, dtype=np.complex128) / m11
+
+    def R(self, kz0: complex, z0: float, m11: complex, m21: complex):
+        """Computes amplitude reflection coefficient
+
+        Args:
+            kz0 (complex): wave vector in vacuum, m^-1
+            z0 (float): left boundary coordinate, m
+            m11 (complex): transfer matrix element
+            m21 (complex): transfer matrix element
+
+        Returns:
+            complex: amplitude reflection coefficient
+        """
+
+        return (m21 / m11) * np.exp(2j * kz0 * z0, dtype=np.complex128)
+
     def compute_coefficients(self):
 
         epsilons_full = [1] + self.epsilons + [1]
         kz_list = [self.compute_kz(eps) for eps in epsilons_full]
+        total_thickness = self.boundaries[-1] - self.boundaries[0]
 
         if self.polarization == "p":
-            gamma_list = [kz/eps for kz, eps in zip(kz_list, epsilons_full)]
+            gamma_list = [kz / eps for kz, eps in zip(kz_list, epsilons_full)]
         else:
             gamma_list = kz_list
 
-        M = np.eye(2, dtype=complex)
+        M = np.eye(2, dtype=np.complex128)
 
-        for i, d in enumerate(self.thicknesses):
-            I = self.interface_matrix(gamma_list[i], gamma_list[i+1])
+        n_layers = len(self.thicknesses)
+        cut_off = False
+
+        for i in range(n_layers):
+            I = self.interface_matrix(gamma_list[i], gamma_list[i + 1])
             M = M @ I
 
-            P = self.propagation_matrix(kz_list[i+1], d)
+            # Check for complete absorption in the next layer
+            kz = kz_list[i + 1]
+            d = self.thicknesses[i]
+
+            if kz.imag * d > 500:
+                cut_off = True
+                break
+
+            P = self.propagation_matrix(kz_list[i + 1], d)
             M = M @ P
 
-        I_last = self.interface_matrix(gamma_list[-2], gamma_list[-1])
-        M = M @ I_last
+        if not cut_off:
+            I_last = self.interface_matrix(gamma_list[-2], gamma_list[-1])
+            M = M @ I_last
 
-        total_length = self.boundaries[-1] - self.boundaries[0]
-        T = np.exp(-1j * kz_list[0] * total_length) / M[0, 0]
+            T = self.T(kz_list[0], total_thickness, M[0, 0])
+        else:
+            T = 0
 
-        R = (M[1, 0] / M[0, 0]) * np.exp(2j * kz_list[0] * self.boundaries[0])
+        R = self.R(kz_list[0], self.boundaries[0], M[0, 0], M[1, 0])
 
         if self.polarization == "p":
             R = -R
